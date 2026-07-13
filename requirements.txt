@@ -1,0 +1,5 @@
+bleak
+esptool
+flet
+mpremote
+pyserial
