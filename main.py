@@ -84,6 +84,12 @@ def discover_serial_ports() -> list[str]:
     return [port.device for port in list_ports.comports()]
 
 
+def discover_firmware_images(root: Path | None = None) -> list[Path]:
+    """Return sorted list of firmware images (.bin / .uf2) in the given root."""
+    search_root = root or PROJECT_ROOT
+    return sorted(list(search_root.glob("*.bin")) + list(search_root.glob("*.uf2")))
+
+
 def select_firmware_image(repo_root: Path) -> Path:
     """Return the downloaded firmware image used for the board flash."""
 
@@ -224,7 +230,10 @@ def flash_firmware_image(
     firmware_image: Path,
     on_progress: Callable[[str], None] | None = None,
 ) -> None:
-    """Flash the downloaded MicroPython firmware image to the ESP32-C6."""
+    """Flash the downloaded MicroPython firmware image to the ESP32-C6.
+
+    The board must already be in BOOT/download mode (handled by the caller).
+    """
 
     if on_progress is not None:
         on_progress(f"Flashing {firmware_image.name}...")
@@ -240,7 +249,7 @@ def flash_firmware_image(
         "--baud",
         str(SERIAL_BAUDRATE),
         "--before",
-        "default-reset",
+        "no_reset",
         "--after",
         "hard-reset",
         "write-flash",
@@ -271,7 +280,7 @@ def erase_flash(
         "--baud",
         str(SERIAL_BAUDRATE),
         "--before",
-        "default-reset",
+        "no_reset",
         "--after",
         "no-reset",
         "erase-flash",
@@ -304,18 +313,6 @@ def install_board_packages(
         raise FlashError(
             (result.stdout + result.stderr).strip() or "Package installation failed."
         )
-
-
-def flash_device(
-    port_name: str,
-    firmware_image: Path,
-    payload: Sequence[FlashPayloadFile],
-    on_progress: Callable[[str], None] | None = None,
-) -> None:
-    erase_flash(port_name, on_progress=on_progress)
-    flash_firmware_image(port_name, firmware_image, on_progress=on_progress)
-    install_board_packages(port_name, on_progress=on_progress)
-    upload_payload(port_name, payload, on_progress=on_progress)
 
 
 def upload_payload(
@@ -356,68 +353,240 @@ def upload_payload(
         _run_script(serial_port, "import machine\nmachine.reset()\n")
 
 
+VERIFY_BAUDRATE = 115200
+
+
+def verify_micropython(port_name: str) -> bool:
+    """Check whether the board on *port_name* is running MicroPython."""
+    try:
+        with serial.Serial(
+            port_name, baudrate=VERIFY_BAUDRATE, timeout=3, write_timeout=3
+        ) as port:
+            _interrupt_running_program(port)
+            time.sleep(0.5)
+            port.write(b"\r")
+            port.flush()
+            _read_until(port, b">>> ", timeout_s=3.0)
+            return True
+    except (FlashError, serial.SerialException, OSError):
+        return False
+
+
 async def main(page: ft.Page) -> None:
     page.title = "ESP32-C6 Flasher"
     page.padding = 20
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
-    page.window.width = 460
-    page.window.height = 240
+    page.window.width = 640
+    page.window.height = 500
     page.window.resizable = False
 
-    status_text = ft.Text("Ready", size=16, text_align=ft.TextAlign.CENTER)
-    flash_button = ft.FilledButton("Flash firmware", icon=ft.Icons.FLASH_ON)
+    status_text = ft.Text("Ready", size=14, text_align=ft.TextAlign.CENTER)
+    instruction_text = ft.Text(
+        "Select a serial port and firmware image, then click Flash Firmware.",
+        size=13,
+        text_align=ft.TextAlign.CENTER,
+    )
+    step_text = ft.Text("Step 1: Flash Firmware", size=16, weight=ft.FontWeight.BOLD)
+
+    def populate_port_dropdown() -> None:
+        ports = discover_serial_ports()
+        port_dropdown.options = [ft.dropdown.Option(p) for p in ports]
+        if not port_dropdown.value and ports:
+            preferred = select_serial_port(ports)
+            if preferred:
+                port_dropdown.value = preferred
+
+    def populate_firmware_dropdown() -> None:
+        images = discover_firmware_images()
+        firmware_dropdown.options = [ft.dropdown.Option(i.name) for i in images]
+        if not firmware_dropdown.value and images:
+            firmware_dropdown.value = images[0].name
+
+    port_dropdown = ft.Dropdown(label="Serial Port", width=480)
+    port_refresh = ft.IconButton(
+        icon=ft.Icons.REFRESH,
+        tooltip="Scan serial ports",
+        on_click=lambda _: (
+            populate_port_dropdown(),
+            page.update(),
+        ),
+    )
+
+    firmware_dropdown = ft.Dropdown(label="Firmware Image", width=480)
+    firmware_refresh = ft.IconButton(
+        icon=ft.Icons.REFRESH,
+        tooltip="Scan firmware images",
+        on_click=lambda _: (
+            populate_firmware_dropdown(),
+            page.update(),
+        ),
+    )
+
+    populate_port_dropdown()
+    populate_firmware_dropdown()
+
+    flash_button = ft.FilledButton("Flash Firmware", icon=ft.Icons.FLASH_ON)
+    upload_button = ft.FilledButton(
+        "Upload MicroPython Payload", icon=ft.Icons.UPLOAD_FILE, disabled=True
+    )
+    verify_button = ft.OutlinedButton("Verify", icon=ft.Icons.CHECK_CIRCLE)
 
     def set_status(message: str) -> None:
         status_text.value = message
         page.update()
 
-    async def handle_flash(_event: ft.ControlEvent) -> None:
+    def set_instruction(message: str) -> None:
+        instruction_text.value = message
+        page.update()
+
+    def set_step(message: str) -> None:
+        step_text.value = message
+        page.update()
+
+    async def handle_verify(_event: ft.ControlEvent) -> None:
+        port = port_dropdown.value
+        if not port:
+            set_status("Select a serial port first.")
+            return
+        set_status(f"Verifying MicroPython on {port}...")
+        page.update()
+        try:
+            if verify_micropython(port):
+                set_status(f"MicroPython is running on {port}.")
+            else:
+                set_status(f"No MicroPython response from {port}.")
+        except Exception as exc:
+            set_status(f"Verification error: {exc}")
+
+    async def handle_flash_firmware(_event: ft.ControlEvent) -> None:
+        port = port_dropdown.value
+        firmware_name = firmware_dropdown.value
+
+        if not port:
+            set_status("Select a serial port first.")
+            return
+        if not firmware_name:
+            set_status("Select a firmware image first.")
+            return
+
         flash_button.disabled = True
-        set_status("Scanning serial ports...")
+        verify_button.disabled = True
+        set_step("Step 1: Flash Firmware")
+
+        set_instruction(
+            "Put the board into BOOT / download mode:\n"
+            "  1. Hold the BOOT button\n"
+            "  2. Press and release the RESET button\n"
+            "  3. Release the BOOT button\n\n"
+            "Then click Flash Firmware above."
+        )
+        page.update()
 
         try:
-            port_name = select_serial_port(discover_serial_ports())
-            if port_name is None:
-                raise FlashError(
-                    "No ESP32-C6 serial port found. Plug the board in and try again."
-                )
+            firmware_image = PROJECT_ROOT / firmware_name
 
-            firmware_image = select_firmware_image(PROJECT_ROOT)
-            payload = collect_flash_payload(PROJECT_ROOT)
-            if not payload:
-                raise FlashError("No firmware files were found to flash.")
+            erase_flash(port, on_progress=set_status)
+            flash_firmware_image(port, firmware_image, on_progress=set_status)
 
-            flash_device(
-                port_name,
-                firmware_image,
-                payload,
-                on_progress=set_status,
+            set_status("Firmware flashed! Board rebooting into MicroPython...")
+            page.update()
+
+            set_step("Step 2: Upload MicroPython Payload")
+            set_instruction(
+                "Board is now running MicroPython.\n"
+                "Click Upload MicroPython Payload to install packages\n"
+                "and upload the firmware files."
             )
-            set_status(
-                f"Done. Flashed firmware and {len(payload)} files to {port_name}."
-            )
+            upload_button.disabled = False
+            page.update()
         except (FlashError, serial.SerialException, OSError) as exc:
             set_status(f"Error: {exc}")
+            set_instruction(
+                "Flash failed. Make sure the board is in BOOT mode.\n"
+                "Check the serial connection and try again."
+            )
         finally:
+            flash_button.disabled = False
+            verify_button.disabled = False
+            page.update()
+
+    async def handle_upload_payload(_event: ft.ControlEvent) -> None:
+        port = port_dropdown.value
+        if not port:
+            return
+
+        upload_button.disabled = True
+        flash_button.disabled = True
+        set_status("Starting MicroPython upload...")
+        page.update()
+
+        try:
+            payload = collect_flash_payload(PROJECT_ROOT)
+            if not payload:
+                raise FlashError("No firmware files were found to upload.")
+
+            install_board_packages(port, on_progress=set_status)
+            upload_payload(port, payload, on_progress=set_status)
+
+            set_status("Verifying MicroPython...")
+            page.update()
+            time.sleep(0.3)
+            if verify_micropython(port):
+                set_status(f"Done. Verified MicroPython on {port}.")
+            else:
+                set_status("Upload complete but MicroPython verification failed.")
+
+            set_instruction(
+                "All done! The board is running MicroPython\n"
+                "with the smart-switch firmware."
+            )
+            set_step("Complete")
+        except (FlashError, serial.SerialException, OSError) as exc:
+            set_status(f"Error: {exc}")
+            set_instruction(
+                "Upload failed. Verify MicroPython is running\n"
+                "on the board and try again."
+            )
+        finally:
+            upload_button.disabled = False
             flash_button.disabled = False
             page.update()
 
-    flash_button.on_click = handle_flash
+    flash_button.on_click = handle_flash_firmware
+    upload_button.on_click = handle_upload_payload
+    verify_button.on_click = handle_verify
 
     page.add(
         ft.Column(
             [
+                ft.Row(
+                    [port_dropdown, port_refresh],
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Row(
+                    [firmware_dropdown, firmware_refresh],
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Divider(height=4),
+                step_text,
+                instruction_text,
+                ft.Row(
+                    [flash_button, upload_button, verify_button],
+                    alignment=ft.MainAxisAlignment.CENTER,
+                    spacing=8,
+                ),
                 status_text,
-                flash_button,
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=20,
+            spacing=8,
         )
     )
 
 
 def launch_app() -> None:
-    ft.run(target=main)
+    ft.run(main)
 
 
 if __name__ == "__main__":

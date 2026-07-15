@@ -24,6 +24,7 @@ async def main(page: ft.Page) -> None:
     page.window.height = 240
     page.window.resizable = False
 
+    device_name_text = ft.Text("Not connected", size=14, italic=True, text_align=ft.TextAlign.CENTER)
     status_text = ft.Text("Idle", size=16, text_align=ft.TextAlign.CENTER)
     toggle_button = ft.FilledButton(
         "Toggle LED", icon=ft.Icons.LIGHTBULB_OUTLINE, disabled=True
@@ -54,6 +55,7 @@ async def main(page: ft.Page) -> None:
         nonlocal client
         client = None
         toggle_button.disabled = True
+        device_name_text.value = "Not connected"
         set_status("Disconnected")
 
     async def connect() -> None:
@@ -72,6 +74,7 @@ async def main(page: ft.Page) -> None:
 
         initial = await client.read_gatt_char(ble_contract.LED_CHAR_UUID)
         led_is_on = ble_contract.decode_led_state(bytes(initial))
+        device_name_text.value = target.name
         set_status(f"Connected to {target.name}")
         sync_button_state()
 
@@ -103,9 +106,9 @@ async def main(page: ft.Page) -> None:
 
     page.add(
         ft.Column(
-            [status_text, toggle_button, reconnect_button],
+            [device_name_text, status_text, toggle_button, reconnect_button],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            spacing=20,
+            spacing=12,
         )
     )
 
@@ -116,7 +119,7 @@ async def main(page: ft.Page) -> None:
 
 
 def launch_app() -> None:
-    ft.run(target=main)
+    ft.run(main)
 
 
 if __name__ == "__main__":
