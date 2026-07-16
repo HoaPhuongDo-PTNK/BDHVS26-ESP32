@@ -533,7 +533,7 @@ async def main(page: ft.Page) -> None:
             set_status("Verifying MicroPython...")
             page.update()
             await asyncio.sleep(0.3)
-            if verify_micropython(port):
+            if await asyncio.to_thread(verify_micropython, port):
                 set_status(f"Done. Verified MicroPython on {port}.")
             else:
                 set_status("Upload complete but MicroPython verification failed.")
