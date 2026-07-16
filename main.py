@@ -21,7 +21,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 ESP32_SOURCE_ROOT = PROJECT_ROOT / "esp32"
 ESP32_ENTRYPOINT = PROJECT_ROOT / "esp32.py"
 SHARED_CONTRACT = PROJECT_ROOT / "ble_contract.py"
-FIRMWARE_IMAGE_NAME = "ESP32_GENERIC_C6-20260406-v1.28.0.bin"
+FIRMWARE_IMAGE_NAME = "ESP32_GENERIC_S3-20260406-v1.28.0.bin"
 DEVICE_ENTRYPOINT = "main.py"
 SERIAL_BAUDRATE = 460800
 UPLOAD_CHUNK_SIZE = 768
@@ -243,7 +243,7 @@ def flash_firmware_image(
         "-m",
         "esptool",
         "--chip",
-        "esp32c6",
+        "esp32s3"   ,
         "--port",
         port_name,
         "--baud",
@@ -274,7 +274,7 @@ def erase_flash(
         "-m",
         "esptool",
         "--chip",
-        "esp32c6",
+        "esp32s3",
         "--port",
         port_name,
         "--baud",
