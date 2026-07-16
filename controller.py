@@ -120,7 +120,8 @@ async def main(page: ft.Page) -> None:
         else:
             raise RuntimeError("Multiple devices found. Select one from the dropdown.")
 
-        set_status(f"Connecting to {target.name}...")
+        display_name = target.name or target.address
+        set_status(f"Connecting to {display_name}...")
         client = BleakClient(target.address, disconnected_callback=handle_disconnect)
         await client.connect()
         await client.start_notify(ble_contract.LED_CHAR_UUID, notification_handler)
