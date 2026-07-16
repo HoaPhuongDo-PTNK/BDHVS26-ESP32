@@ -1,4 +1,6 @@
-"""One-click flasher for the ESP32-C6 smart-switch firmware."""
+"""One-click flasher for the ESP32-C6 smart-switch firmware.
+    Replace the FIRMWARE_IMAGE_NAME with corresponding MCP firmware
+    Correct the esp32 variant in flash_firmware_image() & erase_flash()"""
 
 from __future__ import annotations
 
