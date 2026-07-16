@@ -82,9 +82,11 @@ async def main(page: ft.Page) -> None:
             device_dropdown.value = None
 
         if targets:
-            set_status(f"Found {len(targets)} SMART_SWITCH device(s)")
+            set_status(
+                f"Found {len(targets)} device(s) matching {ble_contract.DEVICE_NAME_PREFIX!r}"
+            )
         else:
-            set_status("No SMART_SWITCH device found.")
+            set_status(f"No devices found matching {ble_contract.DEVICE_NAME_PREFIX!r}")
 
         page.update()
         return targets
