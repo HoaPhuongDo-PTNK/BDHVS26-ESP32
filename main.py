@@ -10,6 +10,7 @@ import re
 import subprocess
 import time
 import sys
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
