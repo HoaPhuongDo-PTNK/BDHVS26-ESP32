@@ -1,1 +1,0 @@
-if await asyncio.to_thread(verify_micropython, port):
