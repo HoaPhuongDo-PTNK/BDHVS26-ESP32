@@ -10,6 +10,7 @@ import re
 import subprocess
 import time
 import sys
+import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Sequence
@@ -375,7 +376,7 @@ def verify_micropython(port_name: str) -> bool:
 
 
 async def main(page: ft.Page) -> None:
-    page.title = "ESP32-C6 Flasher"
+    page.title = "ESP32 Flasher"
     page.padding = 20
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     page.window.width = 640
@@ -453,7 +454,7 @@ async def main(page: ft.Page) -> None:
         set_status(f"Verifying MicroPython on {port}...")
         page.update()
         try:
-            if verify_micropython(port):
+            if await asyncio.to_thread(verify_micropython, port):
                 set_status(f"MicroPython is running on {port}.")
             else:
                 set_status(f"No MicroPython response from {port}.")
@@ -532,8 +533,8 @@ async def main(page: ft.Page) -> None:
 
             set_status("Verifying MicroPython...")
             page.update()
-            time.sleep(0.3)
-            if verify_micropython(port):
+            await asyncio.sleep(0.3)
+            if await asyncio.to_thread(verify_micropython, port):
                 set_status(f"Done. Verified MicroPython on {port}.")
             else:
                 set_status("Upload complete but MicroPython verification failed.")
