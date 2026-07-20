@@ -44,17 +44,26 @@ is_on = False
 last_pressed_timestamp = 0
 
 
-def update_state(state):
+def _state_bytes():
+    return b"\x01" if is_on else b"\x00"
+
+
+def set_state(state):
     global is_on
 
     is_on = bool(state)
     led.value(is_on)
 
     try:
-        led_char.write(
-            b"\x01" if is_on else b"\x00",
-            send_update=True,
-        )
+        led_char.write(_state_bytes())
+    except OSError:
+        pass
+
+
+async def notify_state():
+    await asyncio.sleep(0)
+    try:
+        led_char.write(_state_bytes(), send_update=True)
     except OSError:
         pass
 
@@ -65,7 +74,8 @@ def _toggle_from_button(_arg):
     now = utime.ticks_ms()
     if utime.ticks_diff(now, last_pressed_timestamp) > DEBOUNCE_MS:
         last_pressed_timestamp = now
-        update_state(not is_on)
+        set_state(not is_on)
+        asyncio.create_task(notify_state())
 
 
 def button_handler(pin):
@@ -99,7 +109,7 @@ async def peripheral():
                     except asyncio.TimeoutError:
                         continue
                     try:
-                        update_state(data[0] != 0)
+                        set_state(data[0] != 0)
                     except Exception:
                         pass
             except Exception:
@@ -109,7 +119,7 @@ async def peripheral():
 
 
 async def main():
-    update_state(False)
+    set_state(False)
     await peripheral()
 
 
