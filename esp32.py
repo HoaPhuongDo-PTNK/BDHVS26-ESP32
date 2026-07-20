@@ -37,6 +37,9 @@ led_char = aioble.Characteristic(
 
 aioble.register_services(service)
 
+ble = bluetooth.BLE()
+ble.config(gap_name=DEVICE_NAME)
+
 is_on = False
 last_pressed_timestamp = 0
 
@@ -75,6 +78,8 @@ button.irq(
 async def peripheral():
     while True:
         print("Advertising...")
+
+        ble.config(gap_name=DEVICE_NAME)
 
         async with await aioble.advertise(
             250000,
