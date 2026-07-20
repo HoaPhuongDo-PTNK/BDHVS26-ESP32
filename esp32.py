@@ -50,10 +50,13 @@ def update_state(state):
     is_on = bool(state)
     led.value(is_on)
 
-    led_char.write(
-        b"\x01" if is_on else b"\x00",
-        send_update=True,
-    )
+    try:
+        led_char.write(
+            b"\x01" if is_on else b"\x00",
+            send_update=True,
+        )
+    except OSError:
+        pass
 
 
 def _toggle_from_button(_arg):
@@ -95,7 +98,10 @@ async def peripheral():
                         data = await asyncio.wait_for(led_char.written(), timeout=1.0)
                     except asyncio.TimeoutError:
                         continue
-                    update_state(data[0] != 0)
+                    try:
+                        update_state(data[0] != 0)
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
