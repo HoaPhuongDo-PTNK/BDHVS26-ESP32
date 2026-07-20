@@ -151,7 +151,7 @@ async def main(page: ft.Page) -> None:
         await client.write_gatt_char(
             LED_CHAR_UUID,
             encode_led_state(led_is_on),
-            response=False,
+            response=True,
         )
 
         sync_button()
