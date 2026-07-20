@@ -29,13 +29,24 @@ async def discover_device_address(timeout: float = 5.0) -> str | None:
     UUID, exactly like an OS-paired peripheral (e.g. Logitech G Hub).
     """
 
+    target = str(SERVICE_UUID).lower()
+
     devices = await BleakScanner.discover(
         timeout=timeout,
         service_uuids=[SERVICE_UUID],
     )
-    if not devices:
-        return None
-    return devices[0].address
+    if devices:
+        return devices[0].address
+
+    # Fallback: some platforms do not expose service UUIDs through the
+    # filtered scan, so match against the advertised UUIDs in metadata.
+    devices = await BleakScanner.discover(timeout=timeout)
+    for device in devices:
+        advertised = getattr(device, "metadata", {}).get("uuids", [])
+        if any(target == str(u).lower() for u in advertised):
+            return device.address
+
+    return None
 
 
 async def main(page: ft.Page) -> None:

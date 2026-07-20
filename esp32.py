@@ -3,6 +3,7 @@ import bluetooth
 import aioble
 import uasyncio as asyncio
 import utime
+import micropython
 
 # --------------------------------------------------------------------
 # Configuration
@@ -52,14 +53,17 @@ def update_state(state):
     )
 
 
-def button_handler(pin):
+def _toggle_from_button(_arg):
     global last_pressed_timestamp
 
     now = utime.ticks_ms()
-
     if utime.ticks_diff(now, last_pressed_timestamp) > DEBOUNCE_MS:
         last_pressed_timestamp = now
         update_state(not is_on)
+
+
+def button_handler(pin):
+    micropython.schedule(_toggle_from_button, None)
 
 
 button.irq(
@@ -82,9 +86,11 @@ async def peripheral():
 
             try:
                 while connection.is_connected():
-                    data = await led_char.written()
+                    try:
+                        data = await asyncio.wait_for(led_char.written(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        continue
                     update_state(data[0] != 0)
-
             except Exception:
                 pass
 
