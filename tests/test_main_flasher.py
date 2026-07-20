@@ -87,7 +87,6 @@ class CollectFlashPayloadTests(unittest.TestCase):
             (root / "esp32").mkdir()
             (root / "esp32" / "lib").mkdir()
             (root / "esp32.py").write_text("print('hello')\n", encoding="utf-8")
-            (root / "ble_contract.py").write_text("contract\n", encoding="utf-8")
             (root / "esp32" / "manifest.py").write_text("manifest\n", encoding="utf-8")
             (root / "esp32" / "lib" / "helper.py").write_text(
                 "helper\n", encoding="utf-8"
@@ -97,7 +96,7 @@ class CollectFlashPayloadTests(unittest.TestCase):
 
             self.assertEqual(
                 [item.remote_path for item in payload],
-                ["main.py", "ble_contract.py", "manifest.py", "lib/helper.py"],
+                ["main.py", "manifest.py", "lib/helper.py"],
             )
 
 

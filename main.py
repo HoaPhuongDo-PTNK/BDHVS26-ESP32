@@ -23,7 +23,6 @@ from serial.tools import list_ports
 PROJECT_ROOT = Path(__file__).resolve().parent
 ESP32_SOURCE_ROOT = PROJECT_ROOT / "esp32"
 ESP32_ENTRYPOINT = PROJECT_ROOT / "esp32.py"
-SHARED_CONTRACT = PROJECT_ROOT / "ble_contract.py"
 FIRMWARE_IMAGE_NAME = "ESP32_GENERIC_S3-20260406-v1.28.0.bin"
 DEVICE_ENTRYPOINT = "main.py"
 SERIAL_BAUDRATE = 460800
@@ -118,14 +117,6 @@ def collect_flash_payload(repo_root: Path) -> list[FlashPayloadFile]:
             FlashPayloadFile(source_path=entrypoint, remote_path=DEVICE_ENTRYPOINT)
         )
 
-    shared_contract = repo_root / SHARED_CONTRACT.name
-    if shared_contract.is_file():
-        payload.append(
-            FlashPayloadFile(
-                source_path=shared_contract, remote_path=SHARED_CONTRACT.name
-            )
-        )
-
     source_root = repo_root / ESP32_SOURCE_ROOT.name
     if source_root.is_dir():
         for path in sorted(source_root.rglob("*")):
@@ -145,11 +136,9 @@ def collect_flash_payload(repo_root: Path) -> list[FlashPayloadFile]:
     def sort_key(item: FlashPayloadFile) -> tuple[int, str]:
         if item.remote_path == DEVICE_ENTRYPOINT:
             return (0, item.remote_path)
-        if item.remote_path == SHARED_CONTRACT.name:
-            return (1, item.remote_path)
         if item.remote_path == "manifest.py":
-            return (2, item.remote_path)
-        return (3, item.remote_path)
+            return (1, item.remote_path)
+        return (2, item.remote_path)
 
     return sorted(payload, key=sort_key)
 
@@ -385,11 +374,12 @@ async def main(page: ft.Page) -> None:
 
     status_text = ft.Text("Ready", size=14, text_align=ft.TextAlign.CENTER)
     instruction_text = ft.Text(
-        "Select a serial port and firmware image, then click Flash Firmware.",
+        "Select a serial port. Flash the firmware first, or if the board is "
+        "already running MicroPython, click Upload Payload directly.",
         size=13,
         text_align=ft.TextAlign.CENTER,
     )
-    step_text = ft.Text("Step 1: Flash Firmware", size=16, weight=ft.FontWeight.BOLD)
+    step_text = ft.Text("Ready", size=16, weight=ft.FontWeight.BOLD)
 
     def populate_port_dropdown() -> None:
         ports = discover_serial_ports()
@@ -430,7 +420,7 @@ async def main(page: ft.Page) -> None:
 
     flash_button = ft.FilledButton("Flash Firmware", icon=ft.Icons.FLASH_ON)
     upload_button = ft.FilledButton(
-        "Upload MicroPython Payload", icon=ft.Icons.UPLOAD_FILE, disabled=True
+        "Upload MicroPython Payload", icon=ft.Icons.UPLOAD_FILE
     )
     verify_button = ft.OutlinedButton("Verify", icon=ft.Icons.CHECK_CIRCLE)
 
