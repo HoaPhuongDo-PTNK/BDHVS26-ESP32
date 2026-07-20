@@ -32,6 +32,7 @@ led_char = aioble.Characteristic(
     LED_CHAR_UUID,
     read=True,
     write=True,
+    write_no_response=True,
     notify=True,
 )
 
@@ -42,6 +43,8 @@ ble.config(gap_name=DEVICE_NAME)
 
 is_on = False
 last_pressed_timestamp = 0
+
+notify_event = asyncio.Event()
 
 
 def _state_bytes():
@@ -60,14 +63,6 @@ def set_state(state):
         pass
 
 
-async def notify_state():
-    await asyncio.sleep(0)
-    try:
-        led_char.write(_state_bytes(), send_update=True)
-    except OSError:
-        pass
-
-
 def _toggle_from_button(_arg):
     global last_pressed_timestamp
 
@@ -75,7 +70,7 @@ def _toggle_from_button(_arg):
     if utime.ticks_diff(now, last_pressed_timestamp) > DEBOUNCE_MS:
         last_pressed_timestamp = now
         set_state(not is_on)
-        asyncio.create_task(notify_state())
+        notify_event.set()
 
 
 def button_handler(pin):
@@ -86,6 +81,19 @@ button.irq(
     trigger=Pin.IRQ_FALLING,
     handler=button_handler,
 )
+
+
+async def notify_task(connection):
+    while connection.is_connected():
+        await notify_event.wait()
+        notify_event.clear()
+        await asyncio.sleep(0.01)
+        try:
+            led_char.write(_state_bytes(), send_update=True)
+        except OSError:
+            pass
+        except aioble.DeviceDisconnectedError:
+            break
 
 
 async def peripheral():
@@ -102,18 +110,19 @@ async def peripheral():
 
             print("Connected")
 
+            notify = asyncio.create_task(notify_task(connection))
+
             try:
                 while connection.is_connected():
                     try:
-                        data = await asyncio.wait_for(led_char.written(), timeout=1.0)
-                    except asyncio.TimeoutError:
-                        continue
-                    try:
-                        set_state(data[0] != 0)
-                    except Exception:
-                        pass
+                        data = await led_char.written()
+                    except aioble.DeviceDisconnectedError:
+                        break
+                    set_state(data[0] != 0)
             except Exception:
                 pass
+
+            notify.cancel()
 
             print("Disconnected")
 
